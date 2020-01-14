@@ -7,6 +7,7 @@ import (
   "io/ioutil"
   "github.com/simplereach/timeutils"
   "strconv"
+  "log"
 )
 
 type Project struct {
@@ -36,7 +37,8 @@ type PasswordList []Password
 
 func GetPasswordList() PasswordList {
   var output PasswordList
-  err := json.Unmarshal(tpm_request("passwords.json"), &output)
+  body, _ := tpm_request("passwords.json")
+  err := json.Unmarshal(body, &output)
 
   if err != nil {
     panic(err)
@@ -47,35 +49,63 @@ func GetPasswordList() PasswordList {
 
 func GetPassword(id int) Password {
   var output Password
-  err := json.Unmarshal(tpm_request("passwords/" + strconv.Itoa(id) + ".json"), &output)
+  body, err := tpm_request("passwords/" + strconv.Itoa(id) + ".json")
+  if err != 200 {
+    if err == 404 {
+      log.Panic("Requested password not found " + strconv.Itoa(id))
+    }
+    panic("Error getting password: " + strconv.Itoa(err))
+  }
 
-  if err != nil {
-    panic(err)
+  marshal_err := json.Unmarshal(body, &output)
+
+  if marshal_err != nil {
+    panic(marshal_err)
   }
 
   return output
 }
-//
-// func SavePassword(password Password) {
-//
+
+// return the id of the saved password
+// func SavePassword(password Password) int {
+//   return 1
 // }
 
-func tpm_request(endpoint string) []byte {
+func tpm_request(endpoint string) ([]byte, int) {
   base_url :="http://localhost/teampasswordmanager/index.php/api/v4/"
   client := http.Client{}
 
-  req, _ := http.NewRequest("GET", base_url + "/" + endpoint, nil)
+  req, err := http.NewRequest("GET", base_url + "/" + endpoint, nil)
+  if err != nil {
+    log.Print("Failed to create request " + base_url + "/" + endpoint)
+    panic(err)
+  }
+
   req.Header.Add("Content-Type", "application/json; charset=UTF-8")
   req.Header.Add("Authorization", "Basic a2F0OnBhc3N3b3Jk")
-  resp, _ := client.Do(req)
+  resp, err := client.Do(req)
+
+  if err != nil {
+    log.Print("Failed to get " + base_url + "/" + endpoint)
+    panic(err)
+  }
+
+  if resp.StatusCode != 200 {
+    return nil, resp.StatusCode
+  }
 
   defer resp.Body.Close()
-  body, _ := ioutil.ReadAll(resp.Body)
+  body, err := ioutil.ReadAll(resp.Body)
+  if err != nil {
+    log.Panic("Error when converting to json")
+    panic(err)
+  }
 
-  return body
+  return body, 200
 }
 
 func main() {
   fmt.Println(GetPasswordList())
   fmt.Println(GetPassword(1))
+  fmt.Println(GetPassword(2))
 }
